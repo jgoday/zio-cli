@@ -1,7 +1,7 @@
 package zio.cli.figlet
 
 import zio._
-import zio.blocking._
+import zio.IO._
 import zio.console.putStrLn
 import zio.test._
 import zio.test.Assertion._
@@ -18,8 +18,8 @@ object FigFontRenderReportSpec extends DefaultRunnableSpec {
     testM("figlet.org Fonts Render Report") {
       for {
         fontDbHtml <- ZManaged
-                        .fromAutoCloseable(effectBlockingIO(Source.fromURL(fontDbUrl)))
-                        .use(s => effectBlockingIO(s.getLines().mkString))
+                        .fromAutoCloseable(attemptBlockingIO(Source.fromURL(fontDbUrl)))
+                        .use(s => attemptBlockingIO(s.getLines().mkString))
         names = "(?<=\\?font=)[\\w-]+\\.flf".r.findAllIn(fontDbHtml).toSeq
         items <- ZIO.foreachPar(names) { name =>
                    val url = s"$fontUrl$name"

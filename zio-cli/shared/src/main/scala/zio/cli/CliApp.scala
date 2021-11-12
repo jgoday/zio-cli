@@ -2,11 +2,11 @@ package zio.cli
 
 import zio._
 import zio.cli.figlet.FigFont
-import zio.console._
+import zio.Console._
 import zio.cli.HelpDoc.{h1, p}
 import zio.cli.HelpDoc.Span.{code, text}
 import zio.cli.BuiltInOption._
-import zio.system._
+import zio.System._
 
 import scala.annotation.tailrec
 
@@ -15,7 +15,7 @@ import scala.annotation.tailrec
  * requires environment `R`, and may fail with a value of type `E`.
  */
 sealed trait CliApp[-R, +E, Model] {
-  def run(args: List[String]): ZIO[R with Console with System, Nothing, ExitCode]
+  def run(args: List[String]): ZIO[R with Has[Console] with Has[System], Nothing, ExitCode]
 
   def config(newConfig: CliConfig): CliApp[R, E, Model]
 
@@ -51,7 +51,7 @@ object CliApp {
   ) extends CliApp[R, E, Model] { self =>
     def config(newConfig: CliConfig): CliApp[R, E, Model] = copy(config = newConfig)
 
-    def executeBuiltIn(builtInOption: BuiltInOption): RIO[Console with System, Unit] =
+    def executeBuiltIn(builtInOption: BuiltInOption): RIO[Has[Console] with Has[System], Unit] =
       builtInOption match {
         case ShowHelp(helpDoc) =>
           val fancyName =
@@ -62,10 +62,10 @@ object CliApp {
 
           val header = p(text(name) + text(" ") + text(version) + text(" -- ") + summary)
 
-          putStrLn((header + fancyName + synopsis + helpDoc + footer).toPlaintext(80))
+          printLine((header + fancyName + synopsis + helpDoc + footer).toPlaintext(80))
 
         case ShowCompletionScript(path, shellType) =>
-          putStrLn(CompletionScript(path, if (command.names.nonEmpty) command.names else Set(name), shellType))
+          printLine(CompletionScript(path, if (command.names.nonEmpty) command.names else Set(name), shellType))
         case ShowCompletions(index, shellType) =>
           envs.flatMap { envMap =>
             val compWords = envMap.collect { case (s"COMP_WORD_$idx", word) =>
@@ -73,15 +73,15 @@ object CliApp {
             }.toList.sortBy(_._1).map(_._2)
 
             val completions = Completion.complete(shellType, compWords, index)
-            ZIO.foreach_(completions)(word => putStrLn(word))
+            ZIO.foreachDiscard(completions)(word => printLine(word))
           }
       }
 
     def footer(newFooter: HelpDoc): CliApp[R, E, Model] =
       copy(footer = self.footer + newFooter)
 
-    def printDocs(helpDoc: HelpDoc): URIO[Console, Unit] =
-      putStrLn(helpDoc.toPlaintext(80)).!
+    def printDocs(helpDoc: HelpDoc): URIO[Has[Console], Unit] =
+      printLine(helpDoc.toPlaintext(80)).!
 
     // prepend a first argument in case the CliApp's command is expected to consume it
     @tailrec
@@ -93,10 +93,10 @@ object CliApp {
         case Command.Subcommands(parent, _) => prefix(parent)
       }
 
-    def run(args: List[String]): ZIO[R with Console with System, Nothing, ExitCode] =
+    def run(args: List[String]): ZIO[R with Has[Console] with Has[System], Nothing, ExitCode] =
       command
         .parse(prefix(command) ++ args, config)
-        .foldM(
+        .foldZIO(
           e => printDocs(e.error),
           {
             case CommandDirective.UserDefined(_, value) => execute(value)
